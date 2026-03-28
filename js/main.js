@@ -11,6 +11,7 @@ const canvas        = document.getElementById('c');
 const spinner       = document.getElementById('spinner');
 const statusText    = document.getElementById('status-text');
 const solutionCount = document.getElementById('solution-count');
+const nodeCountEl   = document.getElementById('node-count');
 const solutionNav   = document.getElementById('solution-nav');
 const solutionLabel = document.getElementById('solution-label');
 const btnPrev       = document.getElementById('btn-prev');
@@ -111,6 +112,10 @@ function startWorker() {
         }
         break;
       }
+
+      case 'progress':
+        nodeCountEl.textContent = `${data.nodeCount.toLocaleString('de-DE')} Knoten versucht`;
+        break;
 
       case 'done':
         statusText.textContent =

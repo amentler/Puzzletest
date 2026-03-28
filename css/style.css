@@ -47,6 +47,7 @@ header h1 span {
 }
 
 #solution-count { color: #5eead4; }
+.node-count { color: #4a5270; margin-left: auto; }
 
 #canvas-wrap {
   flex: 1;
