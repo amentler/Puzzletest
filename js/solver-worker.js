@@ -1,43 +1,53 @@
 // ============================================================
 // solver-worker.js – ES-module Web Worker
-// Runs DLX search, streams solutions + progress back to main thread.
+//
+// Receives:  { start: true, slice?: { sliceA:[lo,hi], sliceB:[lo,hi] } }
+// Posts:
+//   { type:'status',   text }
+//   { type:'solution', solution:[{pieceId,cells},...], index }
+//   { type:'progress', nodeCount }
+//   { type:'done',     total, nodeCount }
+//   { type:'error',    message }
 // ============================================================
 
-import { buildPlacements } from './placements.js';
-import { DLX } from './dlx.js';
+import { buildTypePlacements } from './placements.js';
+import { Solver }              from './solver.js';
 
 let solutionCount = 0;
 
-self.onmessage = async () => {
+self.onmessage = async ({ data }) => {
   try {
     self.postMessage({ type: 'status', text: 'Berechne Platzierungen…' });
 
-    const { placements } = buildPlacements();
+    const { placementsA, placementsB, cellToA, cellToB, coordsA, coordsB } =
+      buildTypePlacements();
+
     self.postMessage({
       type: 'status',
-      text: `${placements.length} Platzierungen berechnet. Starte Solver…`
+      text: `${placementsA.length} A-Platzierungen, ${placementsB.length} B-Platzierungen. Starte Solver…`,
     });
 
-    const dlx = new DLX(placements);
-
-    await dlx.search(
-      // Called for each complete solution
-      async (rowIds) => {
-        solutionCount++;
-        const pieces = rowIds.map(rid => {
-          const { pieceId, cells } = placements[rid];
-          return { pieceId, cells };
-        });
-        self.postMessage({ type: 'solution', solution: pieces, index: solutionCount });
-      },
-      // Called every ~20 000 DLX nodes explored
-      (nodeCount) => {
-        self.postMessage({ type: 'progress', nodeCount });
-      }
+    const solver = new Solver(
+      placementsA, placementsB,
+      cellToA, cellToB,
+      coordsA, coordsB,
     );
 
-    self.postMessage({ type: 'done', total: solutionCount });
+    const slice = data.slice ?? null;   // optional parallel-slice restriction
+
+    const nodeCount = await solver.search(
+      async (pieces) => {
+        solutionCount++;
+        self.postMessage({ type: 'solution', solution: pieces, index: solutionCount });
+      },
+      (n) => {
+        self.postMessage({ type: 'progress', nodeCount: n });
+      },
+      slice,
+    );
+
+    self.postMessage({ type: 'done', total: solutionCount, nodeCount });
   } catch (err) {
-    self.postMessage({ type: 'error', message: err.message });
+    self.postMessage({ type: 'error', message: err.message + '\n' + err.stack });
   }
 };

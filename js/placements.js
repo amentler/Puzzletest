@@ -1,76 +1,103 @@
 // ============================================================
-// placements.js – Enumerate every valid placement of every piece
-// ============================================================
-// A placement = { pieceId, cells: [[x,y,z],...], mask: BigInt }
-// mask = 125-bit BigInt with a 1 for every occupied cell
-// cell index = x*25 + y*5 + z  (x,y,z ∈ [0,4])
-//
-// Returns:
-//   placements[]          – all valid placement objects
-//   placementsByCell[]    – for cell index i, list of placement indices
+// placements.js – Enumerate valid placements per shape type
 // ============================================================
 
 import { SHAPE_A, SHAPE_B, PIECES_PER_SHAPE, PIECE_COUNT } from './pieces.js';
 import { uniqueOrientations } from './rotations.js';
 
-export const GRID = 5;
+export const GRID        = 5;
 export const TOTAL_CELLS = GRID * GRID * GRID; // 125
 
-export function cellIndex(x, y, z) { return x*25 + y*5 + z; }
-export function cellCoord(idx)     {
-  const x = (idx / 25) | 0;
-  const y = ((idx % 25) / 5) | 0;
-  const z = idx % 5;
-  return [x, y, z];
+export function cellIndex(x, y, z) { return x * 25 + y * 5 + z; }
+export function cellCoord(idx) {
+  return [(idx / 25) | 0, ((idx % 25) / 5) | 0, idx % 5];
 }
 
-function cellMask(cells) {
-  let m = 0n;
-  for (const [x,y,z] of cells) m |= (1n << BigInt(cellIndex(x,y,z)));
-  return m;
-}
-
-function buildForShape(shape, pieceIdStart, pieceIdEnd) {
-  const orientations = uniqueOrientations(shape);
-  const result = [];
-
-  for (const orient of orientations) {
-    // Bounding box of this orientation
-    const maxX = Math.max(...orient.map(c=>c[0]));
-    const maxY = Math.max(...orient.map(c=>c[1]));
-    const maxZ = Math.max(...orient.map(c=>c[2]));
-
-    // Slide across all valid offsets
-    for (let ox = 0; ox + maxX < GRID; ox++)
-    for (let oy = 0; oy + maxY < GRID; oy++)
-    for (let oz = 0; oz + maxZ < GRID; oz++) {
-      const cells = orient.map(([x,y,z]) => [x+ox, y+oy, z+oz]);
-      const mask  = cellMask(cells);
-
-      // Add one placement per pieceId in range
-      for (let pid = pieceIdStart; pid < pieceIdEnd; pid++) {
-        result.push({ pieceId: pid, cells, mask });
-      }
-    }
-  }
-  return result;
-}
-
+// ── Legacy buildPlacements() (kept for dlx.js compatibility) ──────────────
 export function buildPlacements() {
   const placements = [];
 
-  // Shape A → pieceIds 0..5
-  placements.push(...buildForShape(SHAPE_A, 0, PIECES_PER_SHAPE));
-  // Shape B → pieceIds 6..11
-  placements.push(...buildForShape(SHAPE_B, PIECES_PER_SHAPE, PIECE_COUNT));
-
-  // Pre-index: for each cell, which placements cover it?
-  const placementsByCell = Array.from({length: TOTAL_CELLS}, () => []);
-  for (let i = 0; i < placements.length; i++) {
-    for (const [x,y,z] of placements[i].cells) {
-      placementsByCell[cellIndex(x,y,z)].push(i);
+  const addShape = (shape, idStart, idEnd) => {
+    for (const orient of uniqueOrientations(shape)) {
+      const maxX = Math.max(...orient.map(c => c[0]));
+      const maxY = Math.max(...orient.map(c => c[1]));
+      const maxZ = Math.max(...orient.map(c => c[2]));
+      for (let ox = 0; ox + maxX < GRID; ox++)
+      for (let oy = 0; oy + maxY < GRID; oy++)
+      for (let oz = 0; oz + maxZ < GRID; oz++) {
+        const cells = orient.map(([x, y, z]) => [x + ox, y + oy, z + oz]);
+        for (let pid = idStart; pid < idEnd; pid++)
+          placements.push({ pieceId: pid, cells });
+      }
     }
-  }
+  };
+
+  addShape(SHAPE_A, 0, PIECES_PER_SHAPE);
+  addShape(SHAPE_B, PIECES_PER_SHAPE, PIECE_COUNT);
+
+  const placementsByCell = Array.from({ length: TOTAL_CELLS }, () => []);
+  for (let i = 0; i < placements.length; i++)
+    for (const [x, y, z] of placements[i].cells)
+      placementsByCell[cellIndex(x, y, z)].push(i);
 
   return { placements, placementsByCell };
+}
+
+// ── buildTypePlacements() – optimised, type-centric ──────────────────────
+//
+// Returns flat Int32Arrays (cache-friendly, no object overhead):
+//
+//   placementsA[i]  Int32Array of cell-indices for placement i of shape A
+//   placementsB[i]  Int32Array of cell-indices for placement i of shape B
+//   cellToA[c]      Int32Array of placement indices (into placementsA) that cover cell c
+//   cellToB[c]      same for shape B
+//
+// No per-piece-ID duplication: all 6 A-pieces are identical, so we store
+// each spatial position only ONCE.  The solver tracks remaining counts.
+//
+// Also returns coordsA / coordsB: [[x,y,z],...] per placement (for rendering).
+
+export function buildTypePlacements() {
+  const { flatPlacements: placementsA, coordsList: coordsA } =
+    buildFlatForShape(SHAPE_A);
+  const { flatPlacements: placementsB, coordsList: coordsB } =
+    buildFlatForShape(SHAPE_B);
+
+  const cellToA = buildCellIndex(placementsA);
+  const cellToB = buildCellIndex(placementsB);
+
+  return { placementsA, placementsB, cellToA, cellToB, coordsA, coordsB };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function buildFlatForShape(shape) {
+  const flatPlacements = []; // Array of Int32Array
+  const coordsList     = []; // Array of [[x,y,z],...]
+
+  for (const orient of uniqueOrientations(shape)) {
+    const maxX = Math.max(...orient.map(c => c[0]));
+    const maxY = Math.max(...orient.map(c => c[1]));
+    const maxZ = Math.max(...orient.map(c => c[2]));
+
+    for (let ox = 0; ox + maxX < GRID; ox++)
+    for (let oy = 0; oy + maxY < GRID; oy++)
+    for (let oz = 0; oz + maxZ < GRID; oz++) {
+      const coords = orient.map(([x, y, z]) => [x + ox, y + oy, z + oz]);
+      const flat   = new Int32Array(coords.map(([x, y, z]) => cellIndex(x, y, z)));
+      flatPlacements.push(flat);
+      coordsList.push(coords);
+    }
+  }
+  return { flatPlacements, coordsList };
+}
+
+function buildCellIndex(flatPlacements) {
+  // For each cell, collect placement indices covering it
+  const raw = Array.from({ length: TOTAL_CELLS }, () => []);
+  for (let i = 0; i < flatPlacements.length; i++)
+    for (const ci of flatPlacements[i])
+      raw[ci].push(i);
+  // Convert to Int32Array for cache-friendliness
+  return raw.map(arr => new Int32Array(arr));
 }
