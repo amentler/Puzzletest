@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Puzzle Solver – 5×5×5</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>3D Puzzle Solver <span>5×5×5</span></h1>
+    </header>
+
+    <div id="status-bar">
+      <span id="status-text">Solver wird gestartet…</span>
+      <span id="solution-count"></span>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="c"></canvas>
+      <div id="spinner" aria-label="Lösung wird berechnet">
+        <div class="spinner-ring"></div>
+        <p>Berechne Lösung…</p>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div id="solution-nav" class="hidden">
+        <button id="btn-prev" disabled>&#8592; Zurück</button>
+        <span id="solution-label">Lösung 1</span>
+        <button id="btn-next" disabled>Weiter &#8594;</button>
+      </div>
+
+      <div id="step-controls" class="hidden">
+        <label for="step-slider">
+          Aufbau (Schwerkraft):
+          <span id="step-label">Alle Teile</span>
+        </label>
+        <div class="slider-row">
+          <span>0</span>
+          <input type="range" id="step-slider" min="0" max="12" value="12" step="1" />
+          <span>12</span>
+        </div>
+      </div>
+
+      <div id="legend" class="hidden"></div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
